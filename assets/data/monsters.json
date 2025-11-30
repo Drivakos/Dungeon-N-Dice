@@ -1,0 +1,266 @@
+{
+  "monsters": [
+    {
+      "id": "goblin",
+      "name": "Goblin",
+      "description": "A small, black-hearted humanoid that lurks in dark places and attacks when it has the advantage of numbers.",
+      "type": "humanoid",
+      "size": "Small",
+      "alignment": "Neutral Evil",
+      "armorClass": 15,
+      "maxHitPoints": 7,
+      "speed": 30,
+      "abilityScores": {
+        "strength": 8,
+        "dexterity": 14,
+        "constitution": 10,
+        "intelligence": 10,
+        "wisdom": 8,
+        "charisma": 8
+      },
+      "challengeRating": 0.25,
+      "experienceValue": 50,
+      "actions": [
+        {
+          "name": "Scimitar",
+          "description": "Melee Weapon Attack",
+          "actionType": "action",
+          "attackBonus": 4,
+          "reach": "5 ft",
+          "damage": "1d6+2",
+          "damageType": "slashing"
+        },
+        {
+          "name": "Shortbow",
+          "description": "Ranged Weapon Attack",
+          "actionType": "action",
+          "attackBonus": 4,
+          "range": "80/320 ft",
+          "damage": "1d6+2",
+          "damageType": "piercing"
+        }
+      ],
+      "senses": ["Darkvision 60 ft"],
+      "languages": ["Common", "Goblin"]
+    },
+    {
+      "id": "skeleton",
+      "name": "Skeleton",
+      "description": "Animated bones of the dead, held together by dark magic.",
+      "type": "undead",
+      "size": "Medium",
+      "alignment": "Lawful Evil",
+      "armorClass": 13,
+      "maxHitPoints": 13,
+      "speed": 30,
+      "abilityScores": {
+        "strength": 10,
+        "dexterity": 14,
+        "constitution": 15,
+        "intelligence": 6,
+        "wisdom": 8,
+        "charisma": 5
+      },
+      "challengeRating": 0.25,
+      "experienceValue": 50,
+      "actions": [
+        {
+          "name": "Shortsword",
+          "description": "Melee Weapon Attack",
+          "actionType": "action",
+          "attackBonus": 4,
+          "reach": "5 ft",
+          "damage": "1d6+2",
+          "damageType": "piercing"
+        },
+        {
+          "name": "Shortbow",
+          "description": "Ranged Weapon Attack",
+          "actionType": "action",
+          "attackBonus": 4,
+          "range": "80/320 ft",
+          "damage": "1d6+2",
+          "damageType": "piercing"
+        }
+      ],
+      "vulnerabilities": ["bludgeoning"],
+      "immunities": ["poison"],
+      "conditionImmunities": ["exhaustion", "poisoned"],
+      "senses": ["Darkvision 60 ft"],
+      "languages": ["understands languages it knew in life"]
+    },
+    {
+      "id": "wolf",
+      "name": "Wolf",
+      "description": "A fierce predator that hunts in packs.",
+      "type": "beast",
+      "size": "Medium",
+      "alignment": "Unaligned",
+      "armorClass": 13,
+      "maxHitPoints": 11,
+      "speed": 40,
+      "abilityScores": {
+        "strength": 12,
+        "dexterity": 15,
+        "constitution": 12,
+        "intelligence": 3,
+        "wisdom": 12,
+        "charisma": 6
+      },
+      "challengeRating": 0.25,
+      "experienceValue": 50,
+      "actions": [
+        {
+          "name": "Bite",
+          "description": "Melee Weapon Attack. If the target is a creature, it must succeed on a DC 11 Strength saving throw or be knocked prone.",
+          "actionType": "action",
+          "attackBonus": 4,
+          "reach": "5 ft",
+          "damage": "2d4+2",
+          "damageType": "piercing"
+        }
+      ],
+      "specialAbilities": ["Pack Tactics: The wolf has advantage on attack rolls against a creature if at least one of the wolf's allies is within 5 feet of the creature."],
+      "senses": ["Passive Perception 13"],
+      "languages": []
+    },
+    {
+      "id": "orc",
+      "name": "Orc",
+      "description": "A savage humanoid with gray skin and a bestial face.",
+      "type": "humanoid",
+      "size": "Medium",
+      "alignment": "Chaotic Evil",
+      "armorClass": 13,
+      "maxHitPoints": 15,
+      "speed": 30,
+      "abilityScores": {
+        "strength": 16,
+        "dexterity": 12,
+        "constitution": 16,
+        "intelligence": 7,
+        "wisdom": 11,
+        "charisma": 10
+      },
+      "challengeRating": 0.5,
+      "experienceValue": 100,
+      "actions": [
+        {
+          "name": "Greataxe",
+          "description": "Melee Weapon Attack",
+          "actionType": "action",
+          "attackBonus": 5,
+          "reach": "5 ft",
+          "damage": "1d12+3",
+          "damageType": "slashing"
+        },
+        {
+          "name": "Javelin",
+          "description": "Melee or Ranged Weapon Attack",
+          "actionType": "action",
+          "attackBonus": 5,
+          "reach": "5 ft",
+          "range": "30/120 ft",
+          "damage": "1d6+3",
+          "damageType": "piercing"
+        }
+      ],
+      "specialAbilities": ["Aggressive: As a bonus action, the orc can move up to its speed toward a hostile creature it can see."],
+      "senses": ["Darkvision 60 ft"],
+      "languages": ["Common", "Orc"]
+    },
+    {
+      "id": "giant_spider",
+      "name": "Giant Spider",
+      "description": "A massive spider that lurks in dark caves and forests, spinning webs to trap prey.",
+      "type": "beast",
+      "size": "Large",
+      "alignment": "Unaligned",
+      "armorClass": 14,
+      "maxHitPoints": 26,
+      "speed": 30,
+      "abilityScores": {
+        "strength": 14,
+        "dexterity": 16,
+        "constitution": 12,
+        "intelligence": 2,
+        "wisdom": 11,
+        "charisma": 4
+      },
+      "challengeRating": 1,
+      "experienceValue": 200,
+      "actions": [
+        {
+          "name": "Bite",
+          "description": "Melee Weapon Attack. The target must make a DC 11 Constitution saving throw, taking 2d8 poison damage on a failed save, or half as much on a successful one.",
+          "actionType": "action",
+          "attackBonus": 5,
+          "reach": "5 ft",
+          "damage": "1d8+3",
+          "damageType": "piercing"
+        },
+        {
+          "name": "Web",
+          "description": "Ranged Weapon Attack. The target is restrained by webbing. As an action, the restrained target can make a DC 12 Strength check, bursting the webbing on a success.",
+          "actionType": "action",
+          "attackBonus": 5,
+          "range": "30/60 ft",
+          "rechargeOn": 5
+        }
+      ],
+      "specialAbilities": [
+        "Spider Climb: The spider can climb difficult surfaces, including upside down on ceilings.",
+        "Web Sense: While in contact with a web, the spider knows the exact location of any other creature in contact with the same web.",
+        "Web Walker: The spider ignores movement restrictions caused by webbing."
+      ],
+      "senses": ["Blindsight 10 ft", "Darkvision 60 ft"],
+      "languages": []
+    },
+    {
+      "id": "ogre",
+      "name": "Ogre",
+      "description": "A hulking giant with a dim mind and a love of violence.",
+      "type": "giant",
+      "size": "Large",
+      "alignment": "Chaotic Evil",
+      "armorClass": 11,
+      "maxHitPoints": 59,
+      "speed": 40,
+      "abilityScores": {
+        "strength": 19,
+        "dexterity": 8,
+        "constitution": 16,
+        "intelligence": 5,
+        "wisdom": 7,
+        "charisma": 7
+      },
+      "challengeRating": 2,
+      "experienceValue": 450,
+      "actions": [
+        {
+          "name": "Greatclub",
+          "description": "Melee Weapon Attack",
+          "actionType": "action",
+          "attackBonus": 6,
+          "reach": "5 ft",
+          "damage": "2d8+4",
+          "damageType": "bludgeoning"
+        },
+        {
+          "name": "Javelin",
+          "description": "Melee or Ranged Weapon Attack",
+          "actionType": "action",
+          "attackBonus": 6,
+          "reach": "5 ft",
+          "range": "30/120 ft",
+          "damage": "2d6+4",
+          "damageType": "piercing"
+        }
+      ],
+      "senses": ["Darkvision 60 ft"],
+      "languages": ["Common", "Giant"]
+    }
+  ]
+}
+
+

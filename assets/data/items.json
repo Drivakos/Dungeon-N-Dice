@@ -1,0 +1,123 @@
+{
+  "items": [
+    {
+      "id": "potion_healing",
+      "name": "Potion of Healing",
+      "description": "A red liquid that glimmers when agitated. Drinking this potion restores 2d4+2 hit points.",
+      "type": "potion",
+      "rarity": "common",
+      "weight": 0.5,
+      "value": 50,
+      "effect": "healing",
+      "effectValue": "2d4+2"
+    },
+    {
+      "id": "potion_greater_healing",
+      "name": "Potion of Greater Healing",
+      "description": "A bright red liquid that pulses with energy. Drinking this potion restores 4d4+4 hit points.",
+      "type": "potion",
+      "rarity": "uncommon",
+      "weight": 0.5,
+      "value": 150,
+      "effect": "greaterHealing",
+      "effectValue": "4d4+4"
+    },
+    {
+      "id": "longsword",
+      "name": "Longsword",
+      "description": "A versatile blade favored by warriors and knights.",
+      "type": "weapon",
+      "rarity": "common",
+      "weight": 3,
+      "value": 15,
+      "weaponType": "martialMelee",
+      "damage": "1d8",
+      "damageType": "slashing",
+      "weaponProperties": ["versatile"]
+    },
+    {
+      "id": "shortsword",
+      "name": "Shortsword",
+      "description": "A quick blade perfect for precise strikes.",
+      "type": "weapon",
+      "rarity": "common",
+      "weight": 2,
+      "value": 10,
+      "weaponType": "martialMelee",
+      "damage": "1d6",
+      "damageType": "piercing",
+      "weaponProperties": ["finesse", "light"]
+    },
+    {
+      "id": "longbow",
+      "name": "Longbow",
+      "description": "A tall bow for ranged combat, requiring strength to draw.",
+      "type": "weapon",
+      "rarity": "common",
+      "weight": 2,
+      "value": 50,
+      "weaponType": "martialRanged",
+      "damage": "1d8",
+      "damageType": "piercing",
+      "weaponProperties": ["ammunition", "heavy", "twoHanded"],
+      "range": 150,
+      "longRange": 600
+    },
+    {
+      "id": "leather_armor",
+      "name": "Leather Armor",
+      "description": "The breastplate and shoulder protectors of this armor are made of leather that has been stiffened by boiling in oil.",
+      "type": "armor",
+      "rarity": "common",
+      "weight": 10,
+      "value": 10,
+      "armorType": "light",
+      "baseArmorClass": 11
+    },
+    {
+      "id": "chain_mail",
+      "name": "Chain Mail",
+      "description": "Made of interlocking metal rings, chain mail includes a layer of quilted fabric worn underneath.",
+      "type": "armor",
+      "rarity": "common",
+      "weight": 55,
+      "value": 75,
+      "armorType": "heavy",
+      "baseArmorClass": 16,
+      "strengthRequirement": 13,
+      "stealthDisadvantage": true
+    },
+    {
+      "id": "shield",
+      "name": "Shield",
+      "description": "A wooden shield reinforced with metal.",
+      "type": "shield",
+      "rarity": "common",
+      "weight": 6,
+      "value": 10,
+      "baseArmorClass": 2
+    },
+    {
+      "id": "torch",
+      "name": "Torch",
+      "description": "A torch burns for 1 hour, providing bright light in a 20-foot radius.",
+      "type": "misc",
+      "rarity": "common",
+      "weight": 1,
+      "value": 0.01,
+      "isStackable": true,
+      "maxStack": 20
+    },
+    {
+      "id": "rope_hemp",
+      "name": "Rope, Hemp (50 feet)",
+      "description": "A sturdy hemp rope useful for climbing and binding.",
+      "type": "misc",
+      "rarity": "common",
+      "weight": 10,
+      "value": 1
+    }
+  ]
+}
+
+
