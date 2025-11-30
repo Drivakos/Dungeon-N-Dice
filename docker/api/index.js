@@ -477,6 +477,180 @@ app.get('/memories/:saveId', authenticateToken, async (req, res) => {
 });
 
 // =====================================================
+// STORY SUMMARIES ROUTES (for context management)
+// =====================================================
+
+// Get running summary for a save
+app.get('/saves/:saveId/summary', authenticateToken, async (req, res) => {
+  try {
+    // Verify save belongs to user
+    const saveCheck = await pool.query(
+      'SELECT id FROM game_saves WHERE id = $1 AND user_id = $2',
+      [req.params.saveId, req.user.userId]
+    );
+
+    if (saveCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Save not found' });
+    }
+
+    // Get the most recent running summary
+    const result = await pool.query(
+      `SELECT id, summary, messages_summarized, start_turn, end_turn, created_at
+       FROM story_summaries 
+       WHERE save_id = $1 AND is_running_summary = true
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [req.params.saveId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ summary: null, message: 'No summary yet' });
+    }
+
+    res.json({ summary: result.rows[0] });
+  } catch (err) {
+    console.error('Get summary error:', err);
+    res.status(500).json({ error: 'Failed to get summary' });
+  }
+});
+
+// Get all summaries for a save (for debugging/history)
+app.get('/saves/:saveId/summaries', authenticateToken, async (req, res) => {
+  try {
+    // Verify save belongs to user
+    const saveCheck = await pool.query(
+      'SELECT id FROM game_saves WHERE id = $1 AND user_id = $2',
+      [req.params.saveId, req.user.userId]
+    );
+
+    if (saveCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Save not found' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, summary, messages_summarized, start_turn, end_turn, is_running_summary, created_at
+       FROM story_summaries 
+       WHERE save_id = $1
+       ORDER BY created_at DESC`,
+      [req.params.saveId]
+    );
+
+    res.json({ summaries: result.rows });
+  } catch (err) {
+    console.error('Get summaries error:', err);
+    res.status(500).json({ error: 'Failed to get summaries' });
+  }
+});
+
+// Store new summary
+app.post('/saves/:saveId/summary', authenticateToken, async (req, res) => {
+  try {
+    const { summary, messagesSummarized, startTurn, endTurn, isRunningSummary } = req.body;
+
+    if (!summary || messagesSummarized === undefined || startTurn === undefined || endTurn === undefined) {
+      return res.status(400).json({ error: 'Missing required fields: summary, messagesSummarized, startTurn, endTurn' });
+    }
+
+    // Verify save belongs to user
+    const saveCheck = await pool.query(
+      'SELECT id FROM game_saves WHERE id = $1 AND user_id = $2',
+      [req.params.saveId, req.user.userId]
+    );
+
+    if (saveCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Save not found' });
+    }
+
+    // If this is a running summary, mark old running summaries as not running
+    if (isRunningSummary) {
+      await pool.query(
+        `UPDATE story_summaries 
+         SET is_running_summary = false 
+         WHERE save_id = $1 AND is_running_summary = true`,
+        [req.params.saveId]
+      );
+    }
+
+    const result = await pool.query(
+      `INSERT INTO story_summaries (
+        save_id, summary, messages_summarized, start_turn, end_turn, is_running_summary
+      )
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, summary, messages_summarized, start_turn, end_turn, is_running_summary, created_at`,
+      [req.params.saveId, summary, messagesSummarized, startTurn, endTurn, isRunningSummary || false]
+    );
+
+    res.status(201).json({ summary: result.rows[0] });
+  } catch (err) {
+    console.error('Store summary error:', err);
+    res.status(500).json({ error: 'Failed to store summary' });
+  }
+});
+
+// Update running summary (combine with new events)
+app.put('/saves/:saveId/summary', authenticateToken, async (req, res) => {
+  try {
+    const { summary, messagesSummarized, endTurn } = req.body;
+
+    if (!summary) {
+      return res.status(400).json({ error: 'Missing required field: summary' });
+    }
+
+    // Verify save belongs to user
+    const saveCheck = await pool.query(
+      'SELECT id FROM game_saves WHERE id = $1 AND user_id = $2',
+      [req.params.saveId, req.user.userId]
+    );
+
+    if (saveCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Save not found' });
+    }
+
+    // Get existing running summary
+    const existingResult = await pool.query(
+      `SELECT id, start_turn, messages_summarized FROM story_summaries 
+       WHERE save_id = $1 AND is_running_summary = true
+       ORDER BY created_at DESC LIMIT 1`,
+      [req.params.saveId]
+    );
+
+    if (existingResult.rows.length > 0) {
+      // Update existing
+      const existing = existingResult.rows[0];
+      const result = await pool.query(
+        `UPDATE story_summaries 
+         SET summary = $1, 
+             messages_summarized = $2, 
+             end_turn = $3
+         WHERE id = $4
+         RETURNING id, summary, messages_summarized, start_turn, end_turn, is_running_summary, created_at`,
+        [
+          summary, 
+          messagesSummarized || existing.messages_summarized, 
+          endTurn || existing.end_turn,
+          existing.id
+        ]
+      );
+      res.json({ summary: result.rows[0] });
+    } else {
+      // Create new running summary
+      const result = await pool.query(
+        `INSERT INTO story_summaries (
+          save_id, summary, messages_summarized, start_turn, end_turn, is_running_summary
+        )
+         VALUES ($1, $2, $3, $4, $5, true)
+         RETURNING id, summary, messages_summarized, start_turn, end_turn, is_running_summary, created_at`,
+        [req.params.saveId, summary, messagesSummarized || 0, 0, endTurn || 0]
+      );
+      res.status(201).json({ summary: result.rows[0] });
+    }
+  } catch (err) {
+    console.error('Update summary error:', err);
+    res.status(500).json({ error: 'Failed to update summary' });
+  }
+});
+
+// =====================================================
 // HEALTH CHECK
 // =====================================================
 app.get('/health', async (req, res) => {

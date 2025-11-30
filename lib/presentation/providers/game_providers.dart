@@ -10,6 +10,7 @@ import '../../data/models/story_journal_model.dart';
 import '../../data/services/ai_service.dart';
 import '../../data/services/storage_service.dart';
 import '../../data/services/journal_service.dart';
+import '../../data/services/story_summarizer_service.dart';
 import '../../data/repositories/game_repository.dart';
 import '../../domain/game_engine/game_master.dart';
 import 'auth_providers.dart';
@@ -28,6 +29,20 @@ final characterFactoryProvider = Provider<CharacterFactory>((ref) {
 final gameMasterProvider = Provider<GameMaster>((ref) {
   return GameMaster();
 });
+
+/// Story summarizer service provider
+final storySummarizerProvider = Provider<StorySummarizerService>((ref) {
+  final authService = ref.watch(authServiceProvider);
+  final summarizer = StorySummarizerService();
+  summarizer.setAuthToken(authService.accessToken);
+  return summarizer;
+});
+
+/// Current story summary provider (cached)
+final currentStorySummaryProvider = StateProvider<String?>((ref) => null);
+
+/// Messages summarized count provider (tracks progress)
+final messagesSummarizedProvider = StateProvider<int>((ref) => 0);
 
 /// AI service configuration provider
 final aiConfigProvider = StateProvider<AIServiceConfig?>((ref) {
@@ -119,9 +134,55 @@ class GameStateNotifier extends StateNotifier<AsyncValue<GameStateModel?>> {
     try {
       final repo = _ref.read(gameRepositoryProvider);
       final gameState = await repo.loadGame(id);
+      
+      if (gameState == null) {
+        state = AsyncValue.error(Exception('Save not found'), StackTrace.current);
+        return;
+      }
+      
       state = AsyncValue.data(gameState);
+      
+      // Load existing story summary for this save (non-blocking)
+      _loadStorySummary(id, gameState.storyLog.length);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
+    }
+  }
+  
+  /// Load a game state directly (used when loading from cloud)
+  Future<void> loadGameFromState(GameStateModel gameState, String saveId) async {
+    state = const AsyncValue.loading();
+    try {
+      state = AsyncValue.data(gameState);
+      
+      // Load existing story summary for this save
+      await _loadStorySummary(saveId, gameState.storyLog.length);
+    } catch (e, st) {
+      // Still set the state even if summary loading fails
+      state = AsyncValue.data(gameState);
+    }
+  }
+  
+  /// Load story summary from the database for an existing save
+  Future<void> _loadStorySummary(String saveId, int currentLogLength) async {
+    try {
+      final summarizer = _ref.read(storySummarizerProvider);
+      final existingSummary = await summarizer.getStorySummary(saveId);
+      
+      if (existingSummary != null) {
+        _ref.read(currentStorySummaryProvider.notifier).state = existingSummary.summary;
+        _ref.read(messagesSummarizedProvider.notifier).state = existingSummary.messagesSummarized;
+        print('Loaded existing story summary (${existingSummary.messagesSummarized} messages summarized)');
+      } else {
+        // No summary yet - reset state
+        _ref.read(currentStorySummaryProvider.notifier).state = null;
+        _ref.read(messagesSummarizedProvider.notifier).state = 0;
+      }
+    } catch (e) {
+      print('Failed to load story summary: $e');
+      // Non-blocking - continue without summary
+      _ref.read(currentStorySummaryProvider.notifier).state = null;
+      _ref.read(messagesSummarizedProvider.notifier).state = 0;
     }
   }
   
@@ -243,14 +304,20 @@ class StoryViewModel extends StateNotifier<StoryViewState> {
       
       final aiService = _ref.read(aiServiceProvider);
       final gameMaster = _ref.read(gameMasterProvider);
+      final summarizer = _ref.read(storySummarizerProvider);
+      
+      // Get current story summary for context optimization
+      final currentSummary = _ref.read(currentStorySummaryProvider);
+      final messagesSummarized = _ref.read(messagesSummarizedProvider);
       
       AIResponseModel aiResponse;
       
       if (aiService != null) {
-        // Get AI response
+        // Get AI response with optimized context
         aiResponse = await aiService.generateStoryResponse(
           gameState: gameState,
           playerAction: action,
+          storySummary: currentSummary,
         );
       } else {
         // Fallback for when AI is not configured
@@ -292,6 +359,15 @@ class StoryViewModel extends StateNotifier<StoryViewState> {
       // Auto-save
       await _ref.read(gameStateProvider.notifier).saveGame();
       
+      // Check if summarization is needed (runs in background)
+      _checkAndTriggerSummarization(
+        saveId: gameState.id,
+        storyLog: result.updatedState.storyLog,
+        summarizer: summarizer,
+        currentSummary: currentSummary,
+        messagesSummarized: messagesSummarized,
+      );
+      
       state = state.copyWith(
         processingState: StoryProcessingState.idle,
         suggestedActions: result.suggestedActions ?? aiResponse.suggestedActions,
@@ -304,6 +380,43 @@ class StoryViewModel extends StateNotifier<StoryViewState> {
         processingState: StoryProcessingState.error,
         errorMessage: 'Failed to process action. Please try again.',
       );
+    }
+  }
+  
+  /// Check if summarization is needed and trigger it in the background
+  Future<void> _checkAndTriggerSummarization({
+    required String saveId,
+    required List<StoryMessageModel> storyLog,
+    required StorySummarizerService summarizer,
+    String? currentSummary,
+    required int messagesSummarized,
+  }) async {
+    try {
+      // Check if we should summarize
+      final checkResult = summarizer.checkShouldSummarize(storyLog, messagesSummarized);
+      
+      if (!checkResult.shouldSummarize) return;
+      
+      print('Triggering story summarization: ${checkResult.messagesNeedingSummary} messages to summarize');
+      
+      // Run summarization in background (don't await to not block UI)
+      summarizer.summarizeAndStore(
+        saveId: saveId,
+        storyLog: storyLog,
+        existingSummary: currentSummary,
+        messagesSummarizedSoFar: messagesSummarized,
+      ).then((newSummary) {
+        if (newSummary != null) {
+          // Update cached summary
+          _ref.read(currentStorySummaryProvider.notifier).state = newSummary;
+          _ref.read(messagesSummarizedProvider.notifier).state = storyLog.length;
+          print('Story summarized successfully');
+        }
+      }).catchError((e) {
+        print('Summarization error (non-blocking): $e');
+      });
+    } catch (e) {
+      print('Check summarization error: $e');
     }
   }
   

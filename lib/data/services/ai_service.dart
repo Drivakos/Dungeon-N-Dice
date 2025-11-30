@@ -91,10 +91,14 @@ class AIService {
        _memoryService = memoryService ?? MemoryServiceProvider.instance;
 
   /// Generate story response from player action
+  /// 
+  /// [storySummary] - Optional AI-generated summary of the story so far.
+  /// When provided, uses summary + recent messages instead of full history.
   Future<AIResponseModel> generateStoryResponse({
     required GameStateModel gameState,
     required String playerAction,
     List<MonsterModel>? combatMonsters,
+    String? storySummary,
   }) async {
     // Get memory context for RAG
     final memoryContext = await _memoryService.buildMemoryContext(playerAction);
@@ -105,10 +109,14 @@ class AIService {
       
       // Use conversation history for better context
       if (config.provider == AIProvider.ollama) {
-        final conversationHistory = _buildConversationHistory(gameState, playerAction);
+        final conversationHistory = _buildConversationHistory(
+          gameState, 
+          playerAction,
+          storySummary: storySummary,
+        );
         response = await _callOllamaWithHistory(systemPrompt, conversationHistory);
       } else {
-        final userPrompt = _buildUserPrompt(gameState, playerAction);
+        final userPrompt = _buildUserPrompt(gameState, playerAction, storySummary: storySummary);
         response = await _callAI(
           systemPrompt: systemPrompt,
           userPrompt: userPrompt,
@@ -458,13 +466,40 @@ Keep responses SHORT and ACTION-FOCUSED.''';
   }
 
   /// Build conversation history for the AI
-  List<Map<String, String>> _buildConversationHistory(GameStateModel gameState, String playerAction) {
+  /// 
+  /// When [storySummary] is provided, uses a more efficient context:
+  /// - Summary of earlier events
+  /// - Only the last 5 recent messages in full
+  /// 
+  /// Without summary, uses last 10 messages (legacy behavior).
+  List<Map<String, String>> _buildConversationHistory(
+    GameStateModel gameState, 
+    String playerAction, {
+    String? storySummary,
+  }) {
     final messages = <Map<String, String>>[];
     
-    // Get recent story messages (last 10 for context)
-    final recentMessages = gameState.storyLog.reversed.take(10).toList().reversed.toList();
+    // Determine how many recent messages to include
+    final recentMessageCount = storySummary != null ? 5 : 10;
+    final recentMessages = gameState.storyLog.reversed
+        .take(recentMessageCount)
+        .toList()
+        .reversed
+        .toList();
     
-    // Convert story log to conversation format
+    // If we have a summary, add it as context first
+    if (storySummary != null && storySummary.isNotEmpty) {
+      messages.add({
+        'role': 'user', 
+        'content': 'STORY SUMMARY (what has happened so far):\n$storySummary\n\n---\nThe following are the most recent events. Continue from here.',
+      });
+      messages.add({
+        'role': 'assistant',
+        'content': '{"narration":"I understand the story context. I will continue from the recent events without repeating the summarized content.","suggestedActions":[]}',
+      });
+    }
+    
+    // Convert recent story messages to conversation format
     for (final msg in recentMessages) {
       if (msg.type == MessageType.playerAction) {
         messages.add({'role': 'user', 'content': 'Player action: ${msg.content}'});
@@ -491,12 +526,20 @@ Keep responses SHORT and ACTION-FOCUSED.''';
   }
   
   /// Build a simple user prompt (fallback)
-  String _buildUserPrompt(GameStateModel gameState, String playerAction) {
-    final recentMessages = gameState.storyLog.reversed.take(6).toList().reversed;
+  String _buildUserPrompt(GameStateModel gameState, String playerAction, {String? storySummary}) {
+    final recentMessageCount = storySummary != null ? 5 : 6;
+    final recentMessages = gameState.storyLog.reversed.take(recentMessageCount).toList().reversed;
     final contextBuffer = StringBuffer();
     
+    // Add summary if available
+    if (storySummary != null && storySummary.isNotEmpty) {
+      contextBuffer.writeln('=== STORY SUMMARY ===');
+      contextBuffer.writeln(storySummary);
+      contextBuffer.writeln('=== END SUMMARY ===\n');
+    }
+    
     if (recentMessages.isNotEmpty) {
-      contextBuffer.writeln('=== STORY SO FAR (DO NOT REPEAT) ===');
+      contextBuffer.writeln('=== RECENT EVENTS (continue from here) ===');
       for (final msg in recentMessages) {
         if (msg.type == MessageType.playerAction) {
           contextBuffer.writeln('PLAYER: ${msg.content}');
@@ -504,7 +547,7 @@ Keep responses SHORT and ACTION-FOCUSED.''';
           contextBuffer.writeln('DM: ${msg.content}');
         }
       }
-      contextBuffer.writeln('=== END OF PREVIOUS EVENTS ===\n');
+      contextBuffer.writeln('=== END OF RECENT EVENTS ===\n');
     }
     
     return '''

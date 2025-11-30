@@ -171,6 +171,32 @@ CREATE TABLE IF NOT EXISTS chat_history (
 );
 
 -- =====================================================
+-- STORY SUMMARIES TABLE (for context management)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS story_summaries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    save_id UUID NOT NULL REFERENCES game_saves(id) ON DELETE CASCADE,
+    
+    -- Summary content
+    summary TEXT NOT NULL,
+    
+    -- What was summarized
+    messages_summarized INTEGER NOT NULL,
+    start_turn INTEGER NOT NULL,
+    end_turn INTEGER NOT NULL,
+    
+    -- Running summary (accumulated from all previous summaries)
+    is_running_summary BOOLEAN DEFAULT false,
+    
+    -- Timestamps
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index for story summaries
+CREATE INDEX IF NOT EXISTS idx_story_summaries_save_id ON story_summaries(save_id);
+CREATE INDEX IF NOT EXISTS idx_story_summaries_running ON story_summaries(save_id, is_running_summary);
+
+-- =====================================================
 -- WORLD FACTS TABLE (general world knowledge)
 -- =====================================================
 CREATE TABLE IF NOT EXISTS world_facts (
@@ -368,5 +394,6 @@ COMMENT ON TABLE story_memories IS 'Stores all significant story events for RAG 
 COMMENT ON TABLE npc_memories IS 'Tracks NPC knowledge and relationships with the player';
 COMMENT ON TABLE location_memories IS 'Stores discovered locations and their state';
 COMMENT ON TABLE chat_history IS 'Full conversation history with optional embeddings';
+COMMENT ON TABLE story_summaries IS 'AI-generated summaries for context compression';
 COMMENT ON TABLE world_facts IS 'General world knowledge learned by the player';
 

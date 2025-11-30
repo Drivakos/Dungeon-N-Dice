@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/services/auth_service.dart';
 import '../../providers/auth_providers.dart';
+import '../../providers/game_providers.dart';
 
 /// Save files management screen
 class SavesScreen extends ConsumerStatefulWidget {
@@ -506,9 +507,52 @@ class _SavesScreenState extends ConsumerState<SavesScreen> {
     );
   }
 
-  void _loadSave(BuildContext context, GameSaveInfo save) {
-    ref.read(selectedSaveIdProvider.notifier).state = save.id;
-    context.go('/story');
+  Future<void> _loadSave(BuildContext context, GameSaveInfo save) async {
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: AppColors.dragonGold),
+      ),
+    );
+    
+    try {
+      // Load save from cloud
+      final cloudService = ref.read(cloudSaveServiceProvider);
+      final saveData = await cloudService.loadSave(save.id);
+      
+      if (saveData != null) {
+        // Use the proper load method that also loads the story summary
+        ref.read(selectedSaveIdProvider.notifier).state = save.id;
+        await ref.read(gameStateProvider.notifier).loadGameFromState(saveData, save.id);
+        
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Close loading
+          context.go('/story');
+        }
+      } else {
+        if (context.mounted) {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to load save'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading save: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   void _showCreateSaveDialog(BuildContext context) {

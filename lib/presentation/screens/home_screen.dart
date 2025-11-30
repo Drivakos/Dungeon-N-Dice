@@ -409,9 +409,9 @@ class HomeScreen extends ConsumerWidget {
       final saveData = await cloudService.loadSave(saveId);
       
       if (saveData != null) {
-        // Update game state with loaded save
-        ref.read(gameStateProvider.notifier).updateState(saveData);
+        // Use the proper load method that also loads the story summary
         ref.read(selectedSaveIdProvider.notifier).state = saveId;
+        await ref.read(gameStateProvider.notifier).loadGameFromState(saveData, saveId);
         
         if (context.mounted) {
           Navigator.of(context).pop(); // Close loading
