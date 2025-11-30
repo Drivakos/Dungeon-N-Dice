@@ -12,6 +12,7 @@ import '../../data/services/storage_service.dart';
 import '../../data/services/journal_service.dart';
 import '../../data/repositories/game_repository.dart';
 import '../../domain/game_engine/game_master.dart';
+import 'auth_providers.dart';
 
 /// Game repository provider
 final gameRepositoryProvider = Provider<IGameRepository>((ref) {
@@ -129,13 +130,27 @@ class GameStateNotifier extends StateNotifier<AsyncValue<GameStateModel?>> {
     if (currentState == null) return;
     
     try {
-      final repo = _ref.read(gameRepositoryProvider);
       final updatedState = currentState.copyWith(
         lastPlayedAt: DateTime.now(),
       );
+      
+      // Save to cloud
+      final saveId = _ref.read(selectedSaveIdProvider);
+      if (saveId != null) {
+        final cloudService = _ref.read(cloudSaveServiceProvider);
+        await cloudService.updateSave(
+          saveId: saveId,
+          gameState: updatedState,
+        );
+      }
+      
+      // Also save locally as backup
+      final repo = _ref.read(gameRepositoryProvider);
       await repo.saveGame(updatedState);
+      
       state = AsyncValue.data(updatedState);
     } catch (e) {
+      print('Save error: $e');
       // Handle save error silently or show notification
     }
   }

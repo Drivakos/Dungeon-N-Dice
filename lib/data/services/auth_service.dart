@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/game_state_model.dart';
+
 /// User model
 class AppUser {
   final String id;
@@ -577,13 +579,18 @@ class CloudSaveService {
     }
   }
 
-  /// Get full save data
-  Future<Map<String, dynamic>?> loadSave(String saveId) async {
+  /// Get full save data as GameStateModel
+  Future<GameStateModel?> loadSave(String saveId) async {
     try {
       final response = await _dio.get('/saves/$saveId');
       
       if (response.statusCode == 200 && response.data['save'] != null) {
-        return response.data['save'] as Map<String, dynamic>;
+        final saveData = response.data['save'] as Map<String, dynamic>;
+        final gameStateJson = saveData['game_state'] as Map<String, dynamic>?;
+        
+        if (gameStateJson != null) {
+          return GameStateModel.fromJson(gameStateJson);
+        }
       }
       
       return null;
@@ -593,17 +600,21 @@ class CloudSaveService {
     }
   }
 
-  /// Create new save
+  /// Create new save from GameStateModel
   Future<String?> createSave({
     required String saveName,
-    required Map<String, dynamic> characterData,
-    required Map<String, dynamic> gameState,
+    required GameStateModel gameState,
   }) async {
     try {
       final response = await _dio.post('/saves', data: {
         'saveName': saveName,
-        'characterData': characterData,
-        'gameState': gameState,
+        'characterData': {
+          'name': gameState.character.name,
+          'class': gameState.character.characterClass.name,
+          'race': gameState.character.race.name,
+          'level': gameState.character.level,
+        },
+        'gameState': gameState.toJson(),
       });
       
       if (response.statusCode == 201 && response.data['save'] != null) {
@@ -617,20 +628,25 @@ class CloudSaveService {
     }
   }
 
-  /// Update save
+  /// Update save with GameStateModel
   Future<bool> updateSave({
     required String saveId,
-    String? saveName,
-    Map<String, dynamic>? characterData,
-    Map<String, dynamic>? gameState,
-    int? totalPlayTimeSeconds,
+    required GameStateModel gameState,
   }) async {
     try {
+      // Calculate play time from createdAt to now
+      final playTimeSeconds = DateTime.now().difference(gameState.createdAt).inSeconds;
+      
       final response = await _dio.put('/saves/$saveId', data: {
-        if (saveName != null) 'saveName': saveName,
-        if (characterData != null) 'characterData': characterData,
-        if (gameState != null) 'gameState': gameState,
-        if (totalPlayTimeSeconds != null) 'totalPlayTimeSeconds': totalPlayTimeSeconds,
+        'saveName': gameState.saveName,
+        'characterData': {
+          'name': gameState.character.name,
+          'class': gameState.character.characterClass.name,
+          'race': gameState.character.race.name,
+          'level': gameState.character.level,
+        },
+        'gameState': gameState.toJson(),
+        'totalPlayTimeSeconds': playTimeSeconds,
       });
       
       return response.statusCode == 200;

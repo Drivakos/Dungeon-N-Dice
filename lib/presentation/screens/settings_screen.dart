@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../data/services/ai_service.dart';
@@ -196,6 +197,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     color: AppColors.parchmentDark,
                   ),
                 ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 24),
+          
+          // Session Management
+          _buildSection(
+            context,
+            title: 'Session',
+            icon: Icons.exit_to_app,
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  'Save & Exit to Menu',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                subtitle: Text(
+                  'Return to the main menu',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.parchmentDark,
+                  ),
+                ),
+                trailing: const Icon(Icons.home, color: AppColors.dragonGold),
+                onTap: () => _showExitDialog(context),
               ),
             ],
           ),
@@ -518,6 +545,53 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         );
       }
     }
+  }
+
+  void _showExitDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.bgDark,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: AppColors.dragonGold.withValues(alpha: 0.5)),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.exit_to_app, color: AppColors.dragonGold),
+            SizedBox(width: 8),
+            Text('Exit to Menu'),
+          ],
+        ),
+        content: const Text(
+          'Your progress will be saved automatically. Are you sure you want to return to the main menu?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.dragonGold,
+              foregroundColor: AppColors.bgDarkest,
+            ),
+            onPressed: () async {
+              // Save game before exiting
+              await ref.read(gameStateProvider.notifier).saveGame();
+              
+              if (dialogContext.mounted) {
+                Navigator.of(dialogContext).pop();
+              }
+              if (context.mounted) {
+                context.go('/');
+              }
+            },
+            child: const Text('Exit'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showClearDataDialog(BuildContext context) {
