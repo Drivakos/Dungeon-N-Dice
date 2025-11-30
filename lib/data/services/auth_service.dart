@@ -339,6 +339,146 @@ class AuthService {
 
   /// Get access token for API calls
   String? get accessToken => _accessToken;
+
+  // =====================================================
+  // GUEST ACCOUNT FUNCTIONALITY
+  // =====================================================
+  
+  static const String _guestIdKey = 'guest_device_id';
+  static const String _isGuestKey = 'is_guest_account';
+  
+  /// Check if current user is a guest
+  Future<bool> isGuestAccount() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_isGuestKey) ?? false;
+  }
+
+  /// Get or create a persistent guest device ID
+  Future<String> _getOrCreateGuestId() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? guestId = prefs.getString(_guestIdKey);
+    
+    if (guestId == null) {
+      // Generate a unique guest ID based on timestamp and random
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final random = timestamp.hashCode.abs() % 100000;
+      guestId = 'guest_${timestamp}_$random';
+      await prefs.setString(_guestIdKey, guestId);
+    }
+    
+    return guestId;
+  }
+
+  /// Continue as guest - creates or logs into a persistent guest account
+  /// This ensures the user never loses progress even without signing up
+  Future<AuthResult> continueAsGuest() async {
+    try {
+      final guestId = await _getOrCreateGuestId();
+      final guestEmail = '$guestId@guest.dndgame.local';
+      final guestPassword = 'guest_${guestId}_secure';
+      
+      print('AuthService: Attempting guest login for $guestEmail');
+      
+      // First try to login (existing guest account)
+      try {
+        final loginResult = await signIn(
+          email: guestEmail,
+          password: guestPassword,
+        );
+        
+        if (loginResult.success) {
+          // Mark as guest account
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool(_isGuestKey, true);
+          
+          print('AuthService: Guest login successful');
+          return loginResult;
+        }
+      } on DioException catch (e) {
+        // If 401, account doesn't exist - create it
+        if (e.response?.statusCode != 401) {
+          rethrow;
+        }
+        print('AuthService: Guest account not found, creating new one');
+      }
+      
+      // Create new guest account
+      final registerResult = await register(
+        email: guestEmail,
+        password: guestPassword,
+        displayName: 'Adventurer',
+      );
+      
+      if (registerResult.success) {
+        // Mark as guest account
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_isGuestKey, true);
+        
+        print('AuthService: Guest account created successfully');
+      }
+      
+      return registerResult;
+    } catch (e) {
+      print('AuthService: Guest auth failed - $e');
+      return AuthResult.failure('Failed to continue as guest: $e');
+    }
+  }
+
+  /// Convert guest account to full account
+  /// This allows guests to "claim" their account with a real email
+  Future<AuthResult> convertGuestToFullAccount({
+    required String newEmail,
+    required String newPassword,
+    String? displayName,
+  }) async {
+    if (!await isGuestAccount()) {
+      return AuthResult.failure('Not a guest account');
+    }
+    
+    if (_currentUser == null || _accessToken == null) {
+      return AuthResult.failure('No active session');
+    }
+    
+    try {
+      // Call API to update email/password
+      final response = await _dio.put('/auth/convert-guest', data: {
+        'newEmail': newEmail,
+        'newPassword': newPassword,
+        'displayName': displayName,
+      });
+      
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data;
+        _currentUser = AppUser.fromJson(data['user']);
+        
+        // Clear guest flag
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_isGuestKey, false);
+        
+        await _saveToStorage();
+        
+        return AuthResult.success(
+          user: _currentUser!,
+          accessToken: _accessToken!,
+          refreshToken: _refreshToken!,
+        );
+      }
+      
+      return AuthResult.failure('Failed to convert account');
+    } on DioException catch (e) {
+      final errorMsg = e.response?.data?['error'] ?? 'Conversion failed';
+      return AuthResult.failure(errorMsg);
+    } catch (e) {
+      return AuthResult.failure('Failed to convert account: $e');
+    }
+  }
+
+  /// Clear guest account data (for testing or reset)
+  Future<void> clearGuestData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_guestIdKey);
+    await prefs.remove(_isGuestKey);
+  }
 }
 
 /// Game save model for listing

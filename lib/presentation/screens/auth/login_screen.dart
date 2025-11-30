@@ -383,13 +383,61 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Widget _buildGuestButton() {
     return TextButton.icon(
-      onPressed: () => context.go('/'),
+      onPressed: _isLoading ? null : _handleGuestLogin,
       icon: const Icon(Icons.play_arrow, color: AppColors.parchmentDark),
       label: Text(
         'Continue as Guest',
         style: TextStyle(color: AppColors.parchmentDark),
       ),
     ).animate().fadeIn(delay: 1000.ms);
+  }
+
+  Future<void> _handleGuestLogin() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final result = await ref.read(authServiceProvider).continueAsGuest();
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (result.success) {
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Welcome, Adventurer! Your progress will be saved.'),
+            backgroundColor: AppColors.success,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        
+        // Force refresh auth state
+        ref.invalidate(authStateProvider);
+        ref.invalidate(userSavesProvider);
+        
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        if (mounted) {
+          context.go('/');
+        }
+      } else {
+        setState(() {
+          _errorMessage = result.error ?? 'Failed to continue as guest';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Connection error: $e';
+      });
+    }
   }
 }
 
