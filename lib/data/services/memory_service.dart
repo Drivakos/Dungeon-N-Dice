@@ -35,6 +35,23 @@ class MemoryDatabaseConfig {
       'postgresql://$username:$password@$host:$port/$database';
 }
 
+/// Task types for nomic-embed-text model
+/// Using task prefixes significantly improves embedding quality
+/// See: https://huggingface.co/nomic-ai/nomic-embed-text-v1.5
+enum EmbeddingTaskType {
+  /// Use when indexing/storing documents for later retrieval
+  searchDocument('search_document'),
+  /// Use when generating query embeddings for search
+  searchQuery('search_query'),
+  /// Use when grouping similar content together
+  clustering('clustering'),
+  /// Use when categorizing content into predefined classes
+  classification('classification');
+
+  final String prefix;
+  const EmbeddingTaskType(this.prefix);
+}
+
 /// Memory types for categorization
 enum MemoryType {
   event('event'),
@@ -191,14 +208,29 @@ class MemoryService {
     }
   }
 
-  /// Generate embedding for text using Ollama
-  Future<List<double>?> generateEmbedding(String text) async {
+  /// Generate embedding for text using Ollama with nomic-embed-text
+  /// 
+  /// The [taskType] parameter enables task-specific prefixes for better embedding quality:
+  /// - [EmbeddingTaskType.searchDocument]: Use when storing/indexing content
+  /// - [EmbeddingTaskType.searchQuery]: Use when searching for content
+  /// - [EmbeddingTaskType.clustering]: Use when grouping similar content
+  /// - [EmbeddingTaskType.classification]: Use when categorizing content
+  /// 
+  /// nomic-embed-text supports up to 8192 tokens context length.
+  Future<List<double>?> generateEmbedding(
+    String text, {
+    EmbeddingTaskType taskType = EmbeddingTaskType.searchDocument,
+  }) async {
     try {
+      // Apply task-specific prefix for nomic-embed-text
+      // This significantly improves retrieval quality
+      final prefixedText = '${taskType.prefix}: $text';
+      
       final response = await _dio.post(
         '${config.ollamaUrl}/api/embeddings',
         data: {
           'model': config.embeddingModel,
-          'prompt': text,
+          'prompt': prefixedText,
         },
         options: Options(
           receiveTimeout: const Duration(seconds: 30),
@@ -220,9 +252,13 @@ class MemoryService {
     if (_currentSaveId == null) return;
 
     // Generate embedding if not provided
+    // Use searchDocument task type for indexing stored memories
     MemoryEntry entryToStore = memory;
     if (memory.embedding == null) {
-      final embedding = await generateEmbedding(memory.content);
+      final embedding = await generateEmbedding(
+        memory.content,
+        taskType: EmbeddingTaskType.searchDocument,
+      );
       if (embedding != null) {
         entryToStore = MemoryEntry(
           id: memory.id,
@@ -351,6 +387,8 @@ class MemoryService {
   }
 
   /// Search for relevant memories using semantic similarity
+  /// 
+  /// Uses nomic-embed-text with searchQuery task prefix for optimal retrieval
   Future<List<MemorySearchResult>> searchMemories(
     String query, {
     int limit = 5,
@@ -359,8 +397,12 @@ class MemoryService {
   }) async {
     if (_currentSaveId == null) return [];
 
-    // Generate query embedding
-    final queryEmbedding = await generateEmbedding(query);
+    // Generate query embedding with searchQuery task type
+    // This matches against documents indexed with searchDocument prefix
+    final queryEmbedding = await generateEmbedding(
+      query,
+      taskType: EmbeddingTaskType.searchQuery,
+    );
     if (queryEmbedding == null) {
       // Fallback to keyword search
       return _keywordSearch(query, limit: limit, types: types);

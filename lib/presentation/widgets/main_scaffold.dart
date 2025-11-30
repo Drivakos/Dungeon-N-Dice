@@ -69,37 +69,56 @@ class _BottomNavBar extends StatelessWidget {
                 label: 'Menu',
                 isSelected: false,
                 isExit: true,
-                onTap: () => _showExitDialog(context),
+                onTap: () {
+                  // Unfocus any text fields to prevent Flutter Web errors
+                  FocusScope.of(context).unfocus();
+                  _showExitDialog(context);
+                },
               ),
               _NavItem(
                 icon: Icons.auto_stories,
                 label: 'Story',
                 isSelected: location == '/story',
-                onTap: () => context.go('/story'),
+                onTap: () {
+                  FocusScope.of(context).unfocus();
+                  context.go('/story');
+                },
               ),
               _NavItem(
                 icon: Icons.person,
                 label: 'Hero',
                 isSelected: location == '/character',
-                onTap: () => context.go('/character'),
+                onTap: () {
+                  FocusScope.of(context).unfocus();
+                  context.go('/character');
+                },
               ),
               _NavItem(
                 icon: Icons.inventory_2,
                 label: 'Items',
                 isSelected: location == '/inventory',
-                onTap: () => context.go('/inventory'),
+                onTap: () {
+                  FocusScope.of(context).unfocus();
+                  context.go('/inventory');
+                },
               ),
               _NavItem(
                 icon: Icons.assignment,
                 label: 'Quests',
                 isSelected: location == '/quests',
-                onTap: () => context.go('/quests'),
+                onTap: () {
+                  FocusScope.of(context).unfocus();
+                  context.go('/quests');
+                },
               ),
               _NavItem(
                 icon: Icons.settings,
                 label: 'Settings',
                 isSelected: location == '/settings',
-                onTap: () => context.go('/settings'),
+                onTap: () {
+                  FocusScope.of(context).unfocus();
+                  context.go('/settings');
+                },
               ),
             ],
           ),

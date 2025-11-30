@@ -332,15 +332,33 @@ class StoryViewModel extends StateNotifier<StoryViewState> {
         skipPlayerMessage: true,
       );
       
+      // Process game actions if any (inventory, gold, HP changes, etc.)
+      var finalState = result.updatedState;
+      if (aiResponse.hasGameActions) {
+        final actionsResult = gameMaster.processGameActions(
+          gameState: finalState,
+          actions: aiResponse.gameActions!,
+        );
+        
+        // Merge action messages into story log
+        if (actionsResult.messages.isNotEmpty) {
+          finalState = actionsResult.updatedState.copyWith(
+            storyLog: [...actionsResult.updatedState.storyLog, ...actionsResult.messages],
+          );
+        } else {
+          finalState = actionsResult.updatedState;
+        }
+      }
+      
       // Update game state
-      _ref.read(gameStateProvider.notifier).updateState(result.updatedState);
+      _ref.read(gameStateProvider.notifier).updateState(finalState);
       
       // Record to journal
       await JournalService.recordStoryEvent(
         saveId: gameState.id,
         playerAction: action,
         aiResponse: aiResponse,
-        gameState: result.updatedState,
+        gameState: finalState,
         skillCheckResult: result.skillCheckOutcome != null
             ? SkillCheckResult(
                 skill: result.skillCheckOutcome!.skill,
@@ -362,7 +380,7 @@ class StoryViewModel extends StateNotifier<StoryViewState> {
       // Check if summarization is needed (runs in background)
       _checkAndTriggerSummarization(
         saveId: gameState.id,
-        storyLog: result.updatedState.storyLog,
+        storyLog: finalState.storyLog,
         summarizer: summarizer,
         currentSummary: currentSummary,
         messagesSummarized: messagesSummarized,

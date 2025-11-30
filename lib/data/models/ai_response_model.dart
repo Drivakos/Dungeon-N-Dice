@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../core/constants/game_constants.dart';
+import '../services/game_action_service.dart';
 
 /// Represents the AI's response to a player action
 /// This is the structured output from the AI story engine
@@ -17,6 +18,10 @@ class AIResponseModel extends Equatable {
   final String? ambientDescription;
   final bool requiresPlayerChoice;
   final List<PlayerChoice>? playerChoices;
+  
+  /// Game actions to execute (inventory, health, gold, etc.)
+  /// These are validated and executed by the game engine
+  final List<GameAction>? gameActions;
 
   const AIResponseModel({
     required this.narration,
@@ -32,6 +37,7 @@ class AIResponseModel extends Equatable {
     this.ambientDescription,
     this.requiresPlayerChoice = false,
     this.playerChoices,
+    this.gameActions,
   });
   
   /// Check if this response triggers combat
@@ -66,6 +72,9 @@ class AIResponseModel extends Equatable {
       playerChoices: (json['playerChoices'] as List<dynamic>?)
           ?.map((c) => PlayerChoice.fromJson(c as Map<String, dynamic>))
           .toList(),
+      gameActions: (json['gameActions'] as List<dynamic>?)
+          ?.map((a) => GameAction.fromJson(a as Map<String, dynamic>))
+          .toList(),
     );
   }
 
@@ -84,6 +93,7 @@ class AIResponseModel extends Equatable {
       'ambientDescription': ambientDescription,
       'requiresPlayerChoice': requiresPlayerChoice,
       'playerChoices': playerChoices?.map((c) => c.toJson()).toList(),
+      'gameActions': gameActions?.map((a) => a.toJson()).toList(),
     };
   }
 
@@ -91,8 +101,12 @@ class AIResponseModel extends Equatable {
   List<Object?> get props => [
     narration, proposedCheck, successOutcome, failureOutcome,
     proposedRewards, sceneChange, npcDialogues, combatProposal,
-    combatTrigger, suggestedActions, ambientDescription, requiresPlayerChoice, playerChoices,
+    combatTrigger, suggestedActions, ambientDescription, requiresPlayerChoice, 
+    playerChoices, gameActions,
   ];
+  
+  /// Check if this response has game actions to execute
+  bool get hasGameActions => gameActions != null && gameActions!.isNotEmpty;
 }
 
 /// Combat trigger from AI - indicates combat should start

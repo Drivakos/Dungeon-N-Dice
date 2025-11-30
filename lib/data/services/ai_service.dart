@@ -66,13 +66,17 @@ class AIServiceConfig {
     String baseUrl = 'http://localhost:11434',
     String model = 'qwen2.5:3b-instruct',
   }) {
+    // For small models (3B), use lower temperature for more consistent output
+    // and reduced max tokens to prevent rambling
+    final isSmallModel = model.contains('3b') || model.contains('1b') || model.contains('0.5b');
+    
     return AIServiceConfig(
       provider: AIProvider.ollama,
       apiKey: '', // Not needed for Ollama
       baseUrl: baseUrl,
       model: model,
-      temperature: 0.7,
-      maxTokens: 2048,
+      temperature: isSmallModel ? 0.5 : 0.7, // Lower temp = more predictable JSON
+      maxTokens: isSmallModel ? 512 : 2048,  // Limit output for small models
     );
   }
 }
@@ -357,11 +361,26 @@ Examples:
 - Narration mentions a nervous guard → ["Question the guard", "Bribe him", "Intimidate him"]
 - Narration mentions distant screams → ["Rush toward the screams", "Approach cautiously", "Find a vantage point"]
 
+## GAME ACTIONS (CRITICAL):
+When the story involves items, gold, health, or XP, include "gameActions" for the game engine:
+- Finding items: {"type":"addItem","params":{"itemName":"Health Potion","quantity":1}}
+- Using items: {"type":"useItem","params":{"itemName":"Health Potion"}}
+- Healing: {"type":"heal","params":{"amount":"2d4+2","source":"potion"}}
+- Taking damage: {"type":"damage","params":{"amount":5,"damageType":"fire"}}
+- Finding gold: {"type":"addGold","params":{"amount":25}}
+- Spending gold: {"type":"spendGold","params":{"amount":10,"reason":"purchase"}}
+- Gaining XP: {"type":"addXP","params":{"amount":50,"reason":"combat victory"}}
+- Equipping: {"type":"equipItem","params":{"itemName":"Longsword"}}
+- Location change: {"type":"changeLocation","params":{"locationName":"Dark Cave","description":"A damp cavern..."}}
+
 ## RESPONSE FORMAT:
 Respond with valid JSON:
 {
   "narration": "Your vivid description (2-4 sentences)...",
   "suggestedActions": ["Specific action 1", "Specific action 2", "Specific action 3"],
+  "gameActions": [
+    {"type": "addItem", "params": {"itemName": "Rusty Key", "quantity": 1}}
+  ],
   "proposedCheck": {
     "checkType": "skill|ability|savingThrow",
     "ability": "STR|DEX|CON|INT|WIS|CHA",
@@ -381,6 +400,9 @@ Only include fields that are relevant. suggestedActions and narration are always
   }
   
   /// Build a simpler system prompt for local/smaller models
+  /// 
+  /// IMPORTANT: For 3B models, the system prompt must be VERY short.
+  /// Too many instructions causes the model to lose track and generate garbage.
   String _buildSimpleSystemPrompt(GameStateModel gameState, List<MonsterModel>? monsters, {String? memoryContext}) {
     final character = gameState.character;
     final inCombat = gameState.currentScene.isInCombat;
@@ -389,43 +411,21 @@ Only include fields that are relevant. suggestedActions and narration are always
       return _buildCombatSystemPrompt(gameState, monsters);
     }
     
-    // Build memory section if available
-    final memorySection = memoryContext != null && memoryContext.isNotEmpty
-        ? '''
-$memoryContext
-USE THE ABOVE MEMORIES to maintain story continuity. Reference past events, NPCs, and locations when relevant.
-'''
-        : '';
-    
-    return '''You are an expert D&D Dungeon Master running a continuous adventure.
+    // For small models, use an ultra-minimal prompt
+    // Context is limited, so every token counts
+    return '''You are a D&D Dungeon Master. Respond ONLY with valid JSON.
 
-PLAYER: ${character.name} (Level ${character.level} ${character.race.displayName} ${character.characterClass.displayName})
+PLAYER: ${character.name}, Level ${character.level} ${character.characterClass.displayName}
 LOCATION: ${gameState.currentScene.name}
 HP: ${character.currentHitPoints}/${character.maxHitPoints}
-$memorySection
-CRITICAL RULES:
-1. NEVER repeat previous events
-2. ALWAYS continue the story forward
-3. Reference past events and NPCs from MEMORIES when relevant
-4. Describe NEW events after the player's action
 
-SUGGESTED ACTIONS - Must be SPECIFIC to your narration:
-- Person mentioned → "Talk to [name]", "Ask [name] about..."
-- Object mentioned → "Examine the [object]", "Take the [object]"
-- Location mentioned → "Go to [location]", "Investigate [location]"
-- Danger/enemy mentioned → "Attack", "Prepare for battle", "Flee"
-- NEVER use "Continue", "Wait", "Look around"
+RESPOND WITH THIS EXACT JSON FORMAT:
+{"narration":"Describe what happens in 2-3 sentences.","suggestedActions":["Action 1","Action 2","Action 3"]}
 
-COMBAT TRIGGERS - If player attacks or enemies appear:
-Add this to your response: "combatTrigger": {"enemies": [{"name": "Goblin", "cr": 0.25}]}
-
-RESPONSE FORMAT (JSON only):
-{"narration":"2-3 sentences describing what happens.","suggestedActions":["Specific 1","Specific 2","Specific 3"]}
-
-For skill checks:
-{"narration":"Description.","check":{"ability":"DEX","dc":12},"success":"Success.","failure":"Failure.","suggestedActions":["Action 1","Action 2"]}
-
-ABILITIES: STR, DEX, CON, INT, WIS, CHA''';
+RULES:
+- narration: Describe the scene and events
+- suggestedActions: 3 specific actions based on your narration (not generic like "Continue" or "Wait")
+- Output ONLY the JSON, nothing else''';
   }
   
   /// Build combat-specific system prompt
@@ -467,11 +467,8 @@ Keep responses SHORT and ACTION-FOCUSED.''';
 
   /// Build conversation history for the AI
   /// 
-  /// When [storySummary] is provided, uses a more efficient context:
-  /// - Summary of earlier events
-  /// - Only the last 5 recent messages in full
-  /// 
-  /// Without summary, uses last 10 messages (legacy behavior).
+  /// For small models (3B), we keep history VERY minimal to avoid context exhaustion.
+  /// The model needs most of its context window for following the JSON format instructions.
   List<Map<String, String>> _buildConversationHistory(
     GameStateModel gameState, 
     String playerAction, {
@@ -479,38 +476,50 @@ Keep responses SHORT and ACTION-FOCUSED.''';
   }) {
     final messages = <Map<String, String>>[];
     
-    // Determine how many recent messages to include
-    final recentMessageCount = storySummary != null ? 5 : 10;
+    // For small models, use minimal history (2-3 messages max)
+    // More history = less room for format instructions = worse output
+    final isSmallModel = config.model.contains('3b') || 
+                         config.model.contains('1b') || 
+                         config.model.contains('0.5b');
+    final recentMessageCount = isSmallModel ? 2 : (storySummary != null ? 5 : 10);
+    
     final recentMessages = gameState.storyLog.reversed
         .take(recentMessageCount)
         .toList()
         .reversed
         .toList();
     
-    // If we have a summary, add it as context first
-    if (storySummary != null && storySummary.isNotEmpty) {
+    // For small models, skip the summary injection - it uses too many tokens
+    if (!isSmallModel && storySummary != null && storySummary.isNotEmpty) {
       messages.add({
         'role': 'user', 
-        'content': 'STORY SUMMARY (what has happened so far):\n$storySummary\n\n---\nThe following are the most recent events. Continue from here.',
+        'content': 'STORY SUMMARY:\n$storySummary\n\nContinue from the recent events.',
       });
       messages.add({
         'role': 'assistant',
-        'content': '{"narration":"I understand the story context. I will continue from the recent events without repeating the summarized content.","suggestedActions":[]}',
+        'content': '{"narration":"Understood.","suggestedActions":[]}',
       });
     }
     
     // Convert recent story messages to conversation format
     for (final msg in recentMessages) {
       if (msg.type == MessageType.playerAction) {
-        messages.add({'role': 'user', 'content': 'Player action: ${msg.content}'});
+        messages.add({'role': 'user', 'content': msg.content});
       } else if (msg.type == MessageType.narration || msg.type == MessageType.dialogue) {
-        // Combine narration as assistant response
-        messages.add({'role': 'assistant', 'content': '{"narration":"${_escapeJson(msg.content)}","suggestedActions":["Continue","Look around","Wait"]}'});
+        // Keep assistant responses minimal to save context
+        final truncatedContent = msg.content.length > 150 
+            ? '${msg.content.substring(0, 150)}...' 
+            : msg.content;
+        messages.add({'role': 'assistant', 'content': '{"narration":"${_escapeJson(truncatedContent)}","suggestedActions":[]}'});
       }
     }
     
-    // Add current action as the final user message
-    messages.add({'role': 'user', 'content': 'Player action: $playerAction\n\nContinue the story. Do NOT repeat previous events. Describe what happens NEXT.'});
+    // Add current action - keep it simple for small models
+    if (isSmallModel) {
+      messages.add({'role': 'user', 'content': playerAction});
+    } else {
+      messages.add({'role': 'user', 'content': 'Player action: $playerAction\n\nDescribe what happens next.'});
+    }
     
     return messages;
   }
@@ -624,6 +633,9 @@ Respond with JSON only.
     return response.data['content'][0]['text'] as String;
   }
 
+  /// Estimate token count (rough approximation: ~4 chars per token)
+  int _estimateTokens(String text) => (text.length / 4).ceil();
+  
   /// Call Ollama API (local) with conversation history
   Future<String> _callOllamaWithHistory(String systemPrompt, List<Map<String, String>> conversationHistory) async {
     try {
@@ -631,6 +643,14 @@ Respond with JSON only.
         {'role': 'system', 'content': systemPrompt},
         ...conversationHistory,
       ];
+      
+      // Debug: Log estimated token usage
+      final totalContent = messages.map((m) => m['content'] ?? '').join(' ');
+      final estimatedTokens = _estimateTokens(totalContent);
+      print('AI Request - Model: ${config.model}');
+      print('AI Request - System prompt: ${_estimateTokens(systemPrompt)} tokens (est.)');
+      print('AI Request - History messages: ${conversationHistory.length}');
+      print('AI Request - Total context: ~$estimatedTokens tokens (est.)');
       
       final response = await _dio.post(
         '${config.baseUrl}/api/chat',
@@ -653,7 +673,9 @@ Respond with JSON only.
 
       final message = response.data['message'];
       if (message != null && message['content'] != null) {
-        return message['content'] as String;
+        final content = message['content'] as String;
+        print('AI Response - Length: ${content.length} chars, ~${_estimateTokens(content)} tokens');
+        return content;
       }
       
       throw Exception('No response content');
@@ -727,14 +749,29 @@ Respond with JSON only.
   /// Parse AI response into structured format
   AIResponseModel _parseAIResponse(String response) {
     try {
+      // Log raw response for debugging
+      print('AI raw response: ${response.substring(0, response.length > 200 ? 200 : response.length)}...');
+      
       // Clean the response
       String jsonStr = _cleanJsonResponse(response);
+      print('Cleaned JSON: ${jsonStr.substring(0, jsonStr.length > 200 ? 200 : jsonStr.length)}...');
       
       final json = jsonDecode(jsonStr) as Map<String, dynamic>;
+      print('Parsed JSON keys: ${json.keys.toList()}');
       
       // Extract narration (required) - try multiple field names
-      final narration = _extractString(json, ['narration', 'narrative', 'description', 'text']) 
-          ?? 'The story continues...';
+      final narration = _extractString(json, ['narration', 'narrative', 'description', 'text', 'response', 'content', 'story']);
+      
+      if (narration == null || narration.isEmpty) {
+        print('WARNING: No narration field found in AI response. Available keys: ${json.keys}');
+        // Try to use the whole response if it's a simple string response
+        if (json.length == 1 && json.values.first is String) {
+          return AIResponseModel(
+            narration: json.values.first as String,
+            suggestedActions: ['Continue', 'Look around', 'Wait'],
+          );
+        }
+      }
       
       // Extract suggested actions
       final suggestedActions = _extractStringList(json, ['suggestedActions', 'suggested_actions', 'actions'])
@@ -793,8 +830,11 @@ Respond with JSON only.
         }
       }
       
+      // Use the extracted narration or fallback
+      final finalNarration = narration ?? 'Im sorry i didnt hear you can you repeat ?';
+      
       return AIResponseModel(
-        narration: narration,
+        narration: finalNarration,
         suggestedActions: suggestedActions,
         proposedCheck: proposedCheck,
         successOutcome: successOutcome,
@@ -806,7 +846,7 @@ Respond with JSON only.
         ambientDescription: json['ambientDescription'] as String?,
       );
     } catch (e) {
-      print('AI Response parsing error: $e');
+      print('AI Response parsing error: $e\nRaw response: $response');
       
       // Try to extract narration using regex as fallback
       final narration = _extractNarrationFallback(response);
@@ -820,6 +860,9 @@ Respond with JSON only.
   }
   
   /// Clean JSON response from AI
+  /// 
+  /// For small models that may output multiple JSON objects or malformed JSON,
+  /// we try to find the object that contains "narration" field.
   String _cleanJsonResponse(String response) {
     String cleaned = response.trim();
     
@@ -828,10 +871,41 @@ Respond with JSON only.
     cleaned = cleaned.replaceAll(RegExp(r'^```\s*', multiLine: true), '');
     cleaned = cleaned.replaceAll(RegExp(r'\s*```$', multiLine: true), '');
     
-    // Remove any leading/trailing non-JSON text
-    final jsonMatch = RegExp(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}').firstMatch(cleaned);
-    if (jsonMatch != null) {
-      cleaned = jsonMatch.group(0)!;
+    // Find ALL potential JSON objects in the response
+    final jsonPattern = RegExp(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}');
+    final allMatches = jsonPattern.allMatches(cleaned).toList();
+    
+    if (allMatches.isEmpty) {
+      // No JSON found, return cleaned string for fallback handling
+      return cleaned;
+    }
+    
+    // PRIORITY: Find JSON that contains "narration" field (our expected format)
+    for (final match in allMatches) {
+      final candidate = match.group(0)!;
+      if (candidate.contains('"narration"')) {
+        cleaned = candidate;
+        break;
+      }
+    }
+    
+    // If no narration found, try to find one with "text" or "response" or "content"
+    if (!cleaned.contains('"narration"')) {
+      for (final match in allMatches) {
+        final candidate = match.group(0)!;
+        if (candidate.contains('"text"') || 
+            candidate.contains('"response"') || 
+            candidate.contains('"content"') ||
+            candidate.contains('"story"')) {
+          cleaned = candidate;
+          break;
+        }
+      }
+    }
+    
+    // Last resort: use the first JSON object found
+    if (!cleaned.startsWith('{')) {
+      cleaned = allMatches.first.group(0)!;
     }
     
     // Fix common JSON issues
@@ -862,41 +936,75 @@ Respond with JSON only.
   }
   
   /// Fallback narration extraction using regex
+  /// 
+  /// When JSON parsing fails, we try multiple strategies to extract usable content.
+  /// This is especially important for small models that may output malformed JSON.
   String _extractNarrationFallback(String response) {
-    // Try to find narration in JSON-like format
+    print('Using fallback narration extraction for: ${response.substring(0, response.length > 100 ? 100 : response.length)}...');
+    
+    // Strategy 1: Try to find narration in JSON-like format with various field names
     final patterns = [
       RegExp(r'"narration"\s*:\s*"((?:[^"\\]|\\.)*)"'),
       RegExp(r'"narrative"\s*:\s*"((?:[^"\\]|\\.)*)"'),
       RegExp(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"'),
       RegExp(r'"text"\s*:\s*"((?:[^"\\]|\\.)*)"'),
+      RegExp(r'"response"\s*:\s*"((?:[^"\\]|\\.)*)"'),
+      RegExp(r'"content"\s*:\s*"((?:[^"\\]|\\.)*)"'),
+      RegExp(r'"story"\s*:\s*"((?:[^"\\]|\\.)*)"'),
+      RegExp(r'"message"\s*:\s*"((?:[^"\\]|\\.)*)"'),
     ];
     
     for (final pattern in patterns) {
       final match = pattern.firstMatch(response);
-      if (match != null) {
-        return match.group(1)!
+      if (match != null && match.group(1)!.length > 10) {
+        final extracted = match.group(1)!
             .replaceAll(r'\"', '"')
             .replaceAll(r'\n', '\n')
             .replaceAll(r'\\', '\\');
+        print('Fallback extraction found via pattern: $extracted');
+        return extracted;
       }
     }
     
-    // If nothing found, clean up and return the raw response
+    // Strategy 2: If the response looks like prose (not JSON), use it directly
+    // Small models sometimes just output plain text
+    if (!response.trim().startsWith('{') && response.length > 20) {
+      String prose = response.trim();
+      // Remove any partial JSON at the end
+      final jsonStart = prose.indexOf('{');
+      if (jsonStart > 20) {
+        prose = prose.substring(0, jsonStart).trim();
+      }
+      // Clean up any weird characters
+      prose = prose.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+      if (prose.length > 20) {
+        print('Fallback: Using plain text response');
+        return prose.length > 500 ? '${prose.substring(0, 500)}...' : prose;
+      }
+    }
+    
+    // Strategy 3: Clean up and extract from malformed JSON
     String cleaned = response
         .replaceAll(RegExp(r'[{}\[\]]'), '')
-        .replaceAll(RegExp(r'"[a-zA-Z]+"\s*:'), '')
+        .replaceAll(RegExp(r'"[a-zA-Z_]+"\s*:'), '')
         .replaceAll('"', '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
         .trim();
     
     // Take first few sentences if too long
     if (cleaned.length > 500) {
       final sentences = cleaned.split(RegExp(r'[.!?]'));
       if (sentences.length > 3) {
-        cleaned = sentences.take(3).join('. ') + '.';
+        cleaned = '${sentences.take(3).join('. ')}.';
       }
     }
     
-    return cleaned.isNotEmpty ? cleaned : 'The adventure continues...';
+    // Strategy 4: Generate a generic continuation if all else fails
+    if (cleaned.isEmpty || cleaned.length < 10) {
+      return 'You pause to consider your next move. The world around you seems to hold its breath, waiting for your decision.';
+    }
+    
+    return cleaned;
   }
   
   /// Fallback actions extraction using regex
@@ -1001,5 +1109,6 @@ abstract class IAIService {
     List<MonsterModel>? combatMonsters,
   });
 }
+
 
 

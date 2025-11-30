@@ -35,6 +35,8 @@ class _StoryScreenState extends ConsumerState<StoryScreen> {
 
   @override
   void dispose() {
+    // Unfocus before disposing to prevent Flutter Web text editing errors
+    _focusNode.unfocus();
     _textController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
